@@ -1,5 +1,5 @@
-name: 🔗 GHA
-on: [push, pull_request, merge_group, workflow_dispatch]
+name: 🔗 GHA Android Only
+on: [push, pull_request, workflow_dispatch]
 
 concurrency:
   group: ${{ github.workflow }}|${{ github.ref_name }}
@@ -9,14 +9,11 @@ env:
   GODOT_CIPHER_KEY: ${{ secrets.GODOT_CIPHER_KEY }}
 
 jobs:
-  # First stage: Only static checks, fast and prevent expensive builds from running.
-
+  # 静态检查（可选，想更快可以删掉）
   static-checks:
     if: ${{ !vars.DISABLE_GODOT_CI || github.run_attempt > 1 || github.event_name == 'workflow_dispatch' }}
     name: 📊 Static checks
     uses: ./.github/workflows/static_checks.yml
-
-  # Second stage: Run all the builds and some of the tests.
 
   android-build:
     name: 🤖 Android
@@ -25,5 +22,3 @@ jobs:
     uses: ./.github/workflows/android_builds.yml
     secrets:
       SERVICE_ACCOUNT_KEY: ${{ secrets.SERVICE_ACCOUNT_KEY }}
-
-  
