@@ -224,6 +224,12 @@ jobs:
         with:
           submodules: recursive
 
+      # 🔑 修复 gradlew 权限问题
+      - name: Fix gradlew permissions
+        run: |
+          chmod +x platform/android/java/gradlew
+          if [ -f gradlew ]; then chmod +x gradlew; fi
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
