@@ -3,7 +3,7 @@ on:
   workflow_call:
     secrets:
       SERVICE_ACCOUNT_KEY:
-        required: true
+        required: false  # 改为可选，不需要 Firebase 测试
 
   workflow_dispatch:
 
@@ -23,24 +23,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Editor (target=editor)
-            cache-name: android-editor
-            target: editor
-            instrumented_tests: true
-            scons-flags: >-
-              arch=arm64
-              production=yes
+          # ❌ 删除 Editor 配置
+          
+          # ✅ 只保留导出模板
+          - name: Template arm32 (target=template_release, arch=arm32)
+            cache-name: android-template-arm32-release
+            target: template_release
+            scons-flags: arch=arm32
+
+          - name: Template arm64 (target=template_release, arch=arm64)
+            cache-name: android-template-arm64-release
+            target: template_release
+            scons-flags: arch=arm64
 
           - name: Template arm32 (target=template_debug, arch=arm32)
-            cache-name: android-template-arm32
+            cache-name: android-template-arm32-debug
             target: template_debug
-            instrumented_tests: false
             scons-flags: arch=arm32
 
           - name: Template arm64 (target=template_debug, arch=arm64)
-            cache-name: android-template-arm64
+            cache-name: android-template-arm64-debug
             target: template_debug
-            instrumented_tests: true
             scons-flags: arch=arm64
 
     steps:
@@ -48,6 +51,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           submodules: recursive
+
+      # 🔑 修复 gradlew 权限问题
+      - name: Fix gradlew permissions
+        run: |
+          find . -name "gradlew" -type f -exec chmod +x {} \;
+          echo "gradlew permissions fixed"
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -80,96 +89,16 @@ jobs:
           cache-name: ${{ matrix.cache-name }}
         continue-on-error: true
 
+      # 🔑 生成模板前再次确保权限
       - name: Generate Godot templates
-        if: matrix.target == 'template_debug'
         run: |
           cd platform/android/java
+          chmod +x gradlew
           ./gradlew generateGodotTemplates
           cd ../../..
           ls -l bin/
-
-      - name: Generate Godot editor
-        if: matrix.target == 'editor'
-        run: |
-          cd platform/android/java
-          ./gradlew generateGodotEditor
-          ./gradlew generateGodotHorizonOSEditor
-          ./gradlew generateGodotPicoOSEditor
-          cd ../../..
-          ls -l bin/android_editor_builds/
-
-          # Separate different editors for multiple artifacts
-          mkdir horizonos
-          mv bin/android_editor_builds/*-horizonos-* horizonos
-          mkdir picoos
-          mv bin/android_editor_builds/*-picoos-* picoos
 
       - name: Upload artifact
         uses: ./.github/actions/upload-artifact
         with:
           name: ${{ matrix.cache-name }}
-
-      - name: Upload artifact (Horizon OS)
-        if: matrix.target == 'editor'
-        uses: ./.github/actions/upload-artifact
-        with:
-          name: ${{ matrix.cache-name }}-horizonos
-          path: horizonos
-
-      - name: Upload artifact (PICO OS)
-        if: matrix.target == 'editor'
-        uses: ./.github/actions/upload-artifact
-        with:
-          name: ${{ matrix.cache-name }}-picoos
-          path: picoos
-
-      - name: Generate Instrumented test APKs
-        if: matrix.instrumented_tests && github.repository == 'godotengine/godot' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
-        run: |
-          cd platform/android/java
-          if [ "${{ matrix.target }}" = "editor" ]; then
-            ./gradlew :editor:assembleAndroidAndroidTest :editor:assembleAndroidDebug -Pperform_signing=true
-          else
-            ./gradlew :app:assembleAndroidTest :app:assembleInstrumentedDebug -Pperform_signing=true
-          fi
-          cd ../../..
-
-      - name: Create credentials file
-        if: matrix.instrumented_tests && github.repository == 'godotengine/godot' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
-        uses: google-github-actions/auth@v3
-        with:
-          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
-
-      - name: Set up gcloud CLI
-        if: matrix.instrumented_tests && github.repository == 'godotengine/godot' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
-        uses: google-github-actions/setup-gcloud@v3
-
-      - name: Run tests on Firebase Test Lab
-        if: matrix.instrumented_tests && github.repository == 'godotengine/godot' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
-        run: |
-          set +e
-
-          if [ "${{ matrix.target }}" = "editor" ]; then
-            APP_APK="platform/android/java/editor/build/outputs/apk/android/debug/android_editor-android-debug.apk"
-            TEST_APK="platform/android/java/editor/build/outputs/apk/androidTest/android/debug/android_editor-android-debug-androidTest.apk"
-          else
-            APP_APK="platform/android/java/app/build/outputs/apk/instrumented/debug/android_debug.apk"
-            TEST_APK="platform/android/java/app/build/outputs/apk/androidTest/instrumented/debug/app-instrumented-debug-androidTest.apk"
-          fi
-
-          output=$(gcloud firebase test android run \
-            --type instrumentation \
-            --app "$APP_APK" \
-            --test "$TEST_APK" \
-            --device model=pa3q,version=35,orientation=landscape \
-            --device model=java,version=30,orientation=landscape \
-            --device model=MediumPhone.arm,version=26,orientation=landscape \
-            --use-orchestrator \
-            --timeout 2m 2>&1)
-          exit_code=$?
-          echo "$output"
-          if [[ $exit_code -eq 1 && "$output" == *"TEST_QUOTA_EXCEEDED"* ]]; then
-            echo "::warning title=Firebase Test Lab::Test quota exceeded."
-            exit_code=0
-          fi
-          exit "$exit_code"
