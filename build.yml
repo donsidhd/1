@@ -1,0 +1,205 @@
+name: Build Godot All Platforms
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  SCONS_CACHE: ${{ github.workspace }}/.scons_cache
+  GODOT_CIPHER_KEY: "aaa517151cce6709cd7fc70b718ca4bff0450fe0b81fb9abf4729dda2e713167"
+
+jobs:
+  # ==================== Linux ====================
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [template_debug, template_release]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install SCons
+        run: pip install scons>=4.7.0
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config \
+            libx11-dev libxcursor-dev libxinerama-dev \
+            libgl1-mesa-dev libglu1-mesa-dev libasound2-dev libpulse-dev \
+            libfreetype6-dev libssl-dev libudev-dev libxi-dev libxrandr-dev \
+            yasm gettext
+      - name: Build
+        run: scons platform=linuxbsd target=${{ matrix.target }} -j$(nproc)
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-linux-${{ matrix.target }}
+          path: bin/godot.linuxbsd.*
+          retention-days: 7
+
+  # ==================== Windows ====================
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [template_debug, template_release]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install SCons
+        run: pip install scons>=4.7.0
+      - name: Build
+        run: scons platform=windows target=${{ matrix.target }} -j$(nproc)
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-windows-${{ matrix.target }}
+          path: bin/godot.windows.*
+          retention-days: 7
+
+  # ==================== macOS ====================
+  macos:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [template_debug, template_release]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install SCons
+        run: pip install scons>=4.7.0
+      - name: Install deps
+        run: brew install yasm
+      - name: Build
+        run: scons platform=macos target=${{ matrix.target }} -j$(sysctl -n hw.ncpu)
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-macos-${{ matrix.target }}
+          path: bin/godot.macos.*
+          retention-days: 7
+
+  # ==================== Android ====================
+  android:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, arm32, x86_64]
+        target: [template_debug, template_release]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install SCons
+        run: pip install scons>=4.7.0
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-31 build-tools;30.0.3 ndk;23.2.8568313'
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config \
+            libx11-dev libxcursor-dev libxinerama-dev \
+            libgl1-mesa-dev libglu1-mesa-dev
+      - name: Build
+        run: |
+          scons platform=android target=${{ matrix.target }} \
+            android_arch=${{ matrix.arch }} \
+            android_sdk=$ANDROID_HOME \
+            android_ndk_root=$ANDROID_NDK_ROOT \
+            use_llvm=yes -j$(nproc)
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-android-${{ matrix.arch }}-${{ matrix.target }}
+          path: bin/godot.android.*
+          retention-days: 7
+
+  # ==================== iOS ====================
+  ios:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [template_debug, template_release]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install SCons
+        run: pip install scons>=4.7.0
+      - name: Build
+        run: scons platform=ios target=${{ matrix.target }} -j$(sysctl -n hw.ncpu)
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-ios-${{ matrix.target }}
+          path: bin/godot.ios.*
+          retention-days: 7
+
+  # ==================== Web ====================
+  web:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [template_debug, template_release]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install SCons
+        run: pip install scons>=4.7.0
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.45
+          actions-cache-folder: emsdk-cache
+      - name: Build
+        run: scons platform=web target=${{ matrix.target }} -j$(nproc)
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-web-${{ matrix.target }}
+          path: bin/godot.web.*
+          retention-days: 7
