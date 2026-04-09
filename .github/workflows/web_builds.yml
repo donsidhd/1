@@ -1,6 +1,10 @@
 name: 🌐 Web Builds
 on:
   workflow_call:
+    # 👇 添加 secrets 声明
+    secrets:
+      SCRIPT_AES256_ENCRYPTION_KEY:
+        required: false
   workflow_dispatch:
 
 # Global Settings
@@ -38,6 +42,23 @@ jobs:
         with:
           submodules: recursive
 
+      # 🔑 验证加密密钥
+      - name: Check encryption key
+        run: |
+          if [ -n "$SCRIPT_AES256_ENCRYPTION_KEY" ]; then
+            KEY_LEN=${#SCRIPT_AES256_ENCRYPTION_KEY}
+            echo "✅ Encryption key is set (length: $KEY_LEN)"
+            if [ $KEY_LEN -eq 64 ]; then
+              echo "✅ Key has correct length (64 hex chars)"
+            else
+              echo "⚠️ WARNING: Key length is $KEY_LEN, should be 64"
+            fi
+          else
+            echo "⚠️ No encryption key - building without PCK encryption"
+          fi
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
+
       - name: Set up Emscripten latest
         uses: mymindstorm/setup-emsdk@v14
         with:
@@ -57,12 +78,15 @@ jobs:
       - name: Setup Python and SCons
         uses: ./.github/actions/godot-deps
 
+      # 🔑 编译 - 通过环境变量传递密钥
       - name: Compilation
         uses: ./.github/actions/godot-build
         with:
           scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.scons-flags }}
           platform: web
           target: ${{ matrix.target }}
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
 
       - name: Save Godot build cache
         uses: ./.github/actions/godot-cache-save
