@@ -1,15 +1,14 @@
-name: 🔗 GHA Android Only
-on: [push, pull_request, workflow_dispatch]
+name: 🔗 GHA
+on: [push, pull_request, merge_group, workflow_dispatch]
 
 concurrency:
   group: ${{ github.workflow }}|${{ github.ref_name }}
   cancel-in-progress: true
 
 env:
-  GODOT_CIPHER_KEY: ${{ secrets.GODOT_CIPHER_KEY }}
+  SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
 
 jobs:
-  # 静态检查（可选，想更快可以删掉）
   static-checks:
     if: ${{ !vars.DISABLE_GODOT_CI || github.run_attempt > 1 || github.event_name == 'workflow_dispatch' }}
     name: 📊 Static checks
@@ -22,3 +21,35 @@ jobs:
     uses: ./.github/workflows/android_builds.yml
     secrets:
       SERVICE_ACCOUNT_KEY: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+
+  ios-build:
+    name: 🍏 iOS
+    needs: static-checks
+    if: needs.static-checks.outputs.sources-changed == 'true' || github.event_name != 'pull_request'
+    uses: ./.github/workflows/ios_builds.yml
+
+  linux-build:
+    name: 🐧 Linux
+    needs: static-checks
+    if: needs.static-checks.outputs.sources-changed == 'true' || github.event_name != 'pull_request'
+    uses: ./.github/workflows/linux_builds.yml
+    with:
+      changed-files: ${{ needs.static-checks.outputs.changed-files }}
+
+  macos-build:
+    name: 🍎 macOS
+    needs: static-checks
+    if: needs.static-checks.outputs.sources-changed == 'true' || github.event_name != 'pull_request'
+    uses: ./.github/workflows/macos_builds.yml
+
+  windows-build:
+    name: 🏁 Windows
+    needs: static-checks
+    if: needs.static-checks.outputs.sources-changed == 'true' || github.event_name != 'pull_request'
+    uses: ./.github/workflows/windows_builds.yml
+
+  web-build:
+    name: 🌐 Web
+    needs: static-checks
+    if: needs.static-checks.outputs.sources-changed == 'true' || github.event_name != 'pull_request'
+    uses: ./.github/workflows/web_builds.yml
