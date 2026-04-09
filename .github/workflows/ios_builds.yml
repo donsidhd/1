@@ -1,7 +1,17 @@
 name: 🍏 iOS Builds
 on:
   workflow_call:
+    secrets:
+      SCRIPT_AES256_ENCRYPTION_KEY:
+        required: false
+
   workflow_dispatch:
+    inputs:
+      use_encryption:
+        description: 'Enable PCK encryption'
+        required: false
+        default: false
+        type: boolean
 
 # Global Settings
 env:
@@ -23,6 +33,23 @@ jobs:
         with:
           submodules: recursive
 
+      # 🔑 验证加密密钥
+      - name: Check encryption key
+        run: |
+          if [ -n "$SCRIPT_AES256_ENCRYPTION_KEY" ]; then
+            KEY_LEN=${#SCRIPT_AES256_ENCRYPTION_KEY}
+            echo "✅ Encryption key is set (length: $KEY_LEN)"
+            if [ $KEY_LEN -eq 64 ]; then
+              echo "✅ Key has correct length (64 hex chars)"
+            else
+              echo "⚠️ WARNING: Key length is $KEY_LEN, should be 64"
+            fi
+          else
+            echo "⚠️ No encryption key - building without PCK encryption"
+          fi
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
+
       - name: Restore Godot build cache
         uses: ./.github/actions/godot-cache-restore
         continue-on-error: true
@@ -30,12 +57,15 @@ jobs:
       - name: Setup Python and SCons
         uses: ./.github/actions/godot-deps
 
+      # 🔑 编译 - 通过环境变量传递密钥
       - name: Compilation (arm64)
         uses: ./.github/actions/godot-build
         with:
           scons-flags: ${{ env.SCONS_FLAGS }}
           platform: ios
           target: template_release
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
 
       - name: Save Godot build cache
         uses: ./.github/actions/godot-cache-save
