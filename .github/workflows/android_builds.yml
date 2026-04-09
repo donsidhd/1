@@ -3,9 +3,17 @@ on:
   workflow_call:
     secrets:
       SERVICE_ACCOUNT_KEY:
-        required: false  # 改为可选，不需要 Firebase 测试
+        required: false
+      SCRIPT_AES256_ENCRYPTION_KEY:
+        required: false
 
   workflow_dispatch:
+    inputs:
+      use_encryption:
+        description: 'Enable PCK encryption'
+        required: false
+        default: 'false'
+        type: boolean
 
 # Global Settings
 env:
@@ -23,9 +31,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # ❌ 删除 Editor 配置
-          
-          # ✅ 只保留导出模板
+          # ✅ 导出模板
           - name: Template arm32 (target=template_release, arch=arm32)
             cache-name: android-template-arm32-release
             target: template_release
@@ -52,6 +58,23 @@ jobs:
         with:
           submodules: recursive
 
+      # 🔑 验证加密密钥
+      - name: Check encryption key
+        run: |
+          if [ -n "$SCRIPT_AES256_ENCRYPTION_KEY" ]; then
+            KEY_LEN=${#SCRIPT_AES256_ENCRYPTION_KEY}
+            echo "✅ Encryption key is set (length: $KEY_LEN)"
+            if [ $KEY_LEN -eq 64 ]; then
+              echo "✅ Key has correct length (64 hex chars)"
+            else
+              echo "⚠️ WARNING: Key length is $KEY_LEN, should be 64"
+            fi
+          else
+            echo "⚠️ No encryption key - building without PCK encryption"
+          fi
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
+
       # 🔑 修复 gradlew 权限问题
       - name: Fix gradlew permissions
         run: |
@@ -76,12 +99,15 @@ jobs:
       - name: Download Swappy
         run: python ./misc/scripts/install_swappy_android.py
 
+      # 🔑 编译 - 只通过环境变量传递密钥，不使用 encryption-key 参数
       - name: Compilation
         uses: ./.github/actions/godot-build
         with:
           scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.scons-flags }}
           platform: android
           target: ${{ matrix.target }}
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
 
       - name: Save Godot build cache
         uses: ./.github/actions/godot-cache-save
@@ -89,7 +115,7 @@ jobs:
           cache-name: ${{ matrix.cache-name }}
         continue-on-error: true
 
-      # 🔑 生成模板前再次确保权限
+      # 🔑 生成模板
       - name: Generate Godot templates
         run: |
           cd platform/android/java
