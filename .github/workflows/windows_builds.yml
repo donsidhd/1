@@ -1,6 +1,10 @@
 name: 🏁 Windows Builds
 on:
   workflow_call:
+    # 👇 添加 secrets 声明
+    secrets:
+      SCRIPT_AES256_ENCRYPTION_KEY:
+        required: false
   workflow_dispatch:
 
 # Global Settings
@@ -49,7 +53,6 @@ jobs:
 
           - name: Template w/ GCC (target=template_release, use_mingw=yes)
             cache-name: windows-template-gcc
-            # MinGW takes MUCH longer to compile; save time by only targeting Template.
             target: template_release
             scons-flags: use_mingw=yes
             bin: ./bin/godot.windows.template_release.x86_64.console.exe
@@ -60,6 +63,24 @@ jobs:
         uses: actions/checkout@v6
         with:
           submodules: recursive
+
+      # 🔑 验证加密密钥
+      - name: Check encryption key
+        shell: bash
+        run: |
+          if [ -n "$SCRIPT_AES256_ENCRYPTION_KEY" ]; then
+            KEY_LEN=${#SCRIPT_AES256_ENCRYPTION_KEY}
+            echo "✅ Encryption key is set (length: $KEY_LEN)"
+            if [ $KEY_LEN -eq 64 ]; then
+              echo "✅ Key has correct length (64 hex chars)"
+            else
+              echo "⚠️ WARNING: Key length is $KEY_LEN, should be 64"
+            fi
+          else
+            echo "⚠️ No encryption key - building without PCK encryption"
+          fi
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
 
       - name: Restore Godot build cache
         uses: ./.github/actions/godot-cache-restore
@@ -109,12 +130,15 @@ jobs:
             echo "ACCESSKIT_ENABLED=no" >> "$GITHUB_OUTPUT"
           fi
 
+      # 🔑 编译 - 通过环境变量传递密钥
       - name: Compilation
         uses: ./.github/actions/godot-build
         with:
           scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.scons-flags }} d3d12=${{ steps.d3d12-sdk.outputs.D3D12_ENABLED }} accesskit=${{ steps.accesskit-sdk.outputs.ACCESSKIT_ENABLED }} angle=${{ steps.angle-sdk.outputs.ANGLE_ENABLED }}
           platform: windows
           target: ${{ matrix.target }}
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
 
       - name: Save Godot build cache
         uses: ./.github/actions/godot-cache-save
