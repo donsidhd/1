@@ -1,6 +1,10 @@
 name: 🍎 macOS Builds
 on:
   workflow_call:
+    # 👇 添加 secrets 声明
+    secrets:
+      SCRIPT_AES256_ENCRYPTION_KEY:
+        required: false
   workflow_dispatch:
 
 # Global Settings
@@ -35,6 +39,23 @@ jobs:
         uses: actions/checkout@v6
         with:
           submodules: recursive
+
+      # 🔑 验证加密密钥
+      - name: Check encryption key
+        run: |
+          if [ -n "$SCRIPT_AES256_ENCRYPTION_KEY" ]; then
+            KEY_LEN=${#SCRIPT_AES256_ENCRYPTION_KEY}
+            echo "✅ Encryption key is set (length: $KEY_LEN)"
+            if [ $KEY_LEN -eq 64 ]; then
+              echo "✅ Key has correct length (64 hex chars)"
+            else
+              echo "⚠️ WARNING: Key length is $KEY_LEN, should be 64"
+            fi
+          else
+            echo "⚠️ No encryption key - building without PCK encryption"
+          fi
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
 
       - name: Restore Godot build cache
         uses: ./.github/actions/godot-cache-restore
@@ -78,19 +99,25 @@ jobs:
           fi
         continue-on-error: true
 
+      # 🔑 编译 x86_64 - 通过环境变量传递密钥
       - name: Compilation (x86_64)
         uses: ./.github/actions/godot-build
         with:
           scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.scons-flags }} arch=x86_64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }} accesskit=${{ steps.accesskit-sdk.outputs.ACCESSKIT_ENABLED }} angle=${{ steps.angle-sdk.outputs.ANGLE_ENABLED }}
           platform: macos
           target: ${{ matrix.target }}
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
 
+      # 🔑 编译 arm64 - 通过环境变量传递密钥
       - name: Compilation (arm64)
         uses: ./.github/actions/godot-build
         with:
           scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.scons-flags }} arch=arm64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }} accesskit=${{ steps.accesskit-sdk.outputs.ACCESSKIT_ENABLED }} angle=${{ steps.angle-sdk.outputs.ANGLE_ENABLED }}
           platform: macos
           target: ${{ matrix.target }}
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
 
       - name: Save Godot build cache
         uses: ./.github/actions/godot-cache-save
